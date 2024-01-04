@@ -12,31 +12,6 @@ from filter import ActionFilterWrapper
 from sim.robots import A1
 from sim.tasks import Run
 
-# @torch.jit.script
-# def quat_rotate(q, v):
-#     shape = q.shape
-#     q_w = q[:, -1]
-#     q_vec = q[:, :3]
-#     a = v * (2.0 * q_w ** 2 - 1.0).unsqueeze(-1)
-#     b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
-#     c = q_vec * \
-#         torch.bmm(q_vec.view(shape[0], 1, 3), v.view(
-#             shape[0], 3, 1)).squeeze(-1) * 2.0
-#     return a + b + c
-
-
-# @torch.jit.script
-# def quat_rotate_inverse(q, v):
-#     shape = q.shape
-#     q_w = q[:, -1]
-#     q_vec = q[:, :3]
-#     a = v * (2.0 * q_w ** 2 - 1.0).unsqueeze(-1)
-#     b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
-#     c = q_vec * \
-#         torch.bmm(q_vec.view(shape[0], 1, 3), v.view(
-#             shape[0], 3, 1)).squeeze(-1) * 2.0
-#     return a - b + c
-
 
 def quat_rotate(quat, v, inverse=False):
     """
@@ -46,54 +21,41 @@ def quat_rotate(quat, v, inverse=False):
     q_w = quat[0]
     q_vec = quat[1:]
     a = v * (2.0 * q_w**2 - 1.0)
-    b = np.cross(q_vec, v, axis=-1) * q_w * 2.0
+    b = np.cross(q_vec, v) * q_w * 2.0
     c = q_vec * np.dot(q_vec, v) * 2.0
     return a + b + c if not inverse else a - b + c
 
 
+class obs_scales:
+    lin_vel = 2.0
+    ang_vel = 0.25
+    dof_pos = 1.0
+    dof_vel = 0.05
+    action_scale = 0.25
+    # height_measurements = 5.0
+
+
+command_scale = np.array(
+    [obs_scales.lin_vel, obs_scales.lin_vel, obs_scales.ang_vel], dtype=np.float32
+)
+
+default_dof_pos = np.array(
+    [0.05, 0.7, -1.4, 0.05, 0.7, -1.4, 0.05, 0.7, -1.4, 0.05, 0.7, -1.4],
+    dtype=np.float32,
+)
+# default_dof_pos = np.array(
+#     [0.1, 0.8, -1.5, -0.1, 0.8, -1.5, 0.1, 0.8, -1.5, -0.1, 0.8, -1.5]
+# )
+
+joint_alter_index = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
+
+
 class ObsMujoco2Isaac(gym.ObservationWrapper):
-    gravity_vector = np.asarray([0, 0, -1])
+    gravity_vector = np.array([0, 0, -1], dtype=np.float32)
 
     @property
     def observation_space(self):
-        return spaces.Dict(
-            {
-                "base_lin_vel": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32
-                ),
-                "base_ang_vel": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32
-                ),
-                "projected_gravity": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32
-                ),
-                "commands": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32
-                ),
-                "dof_pos": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32
-                ),
-                "dof_vel": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32
-                ),
-                "actions": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32
-                ),
-            }
-        )
-
-    class obs_scales:
-        lin_vel = 2.0
-        ang_vel = 0.25
-        dof_pos = 1.0
-        dof_vel = 0.05
-        height_measurements = 5.0
-        
-    command_scale = np.asarray([obs_scales.lin_vel, obs_scales.lin_vel, obs_scales.ang_vel])
-
-    default_dof_pos = np.asarray(
-        [0.05, 0.7, -1.4, 0.05, 0.7, -1.4, 0.05, 0.7, -1.4, 0.05, 0.7, -1.4]
-    )
+        return spaces.Box(low=-np.inf, high=np.inf, shape=(48,), dtype=np.float32)
 
     def observation(self, observation: Dict):
         """
@@ -114,48 +76,42 @@ class ObsMujoco2Isaac(gym.ObservationWrapper):
             'dof_vel': 12
             'actions': 12
         with total dim = 48
-            class normalization:
-                class obs_scales:
-                    lin_vel = 2.0
-                    ang_vel = 0.25
-                    dof_pos = 1.0
-                    dof_vel = 0.05
-                    height_measurements = 5.0
-                clip_observations = 100.
-                clip_actions = 100.
         """
         base_lin_vel = observation["a1_description/sensors_velocimeter"]
+        # base_lin_vel = quat_rotate(
+        #     observation["a1_description/sensors_framequat"],
+        #     base_lin_vel,
+        #     inverse=False,
+        #     # inverse=True,
+        # )
         base_ang_vel = observation["a1_description/sensors_gyro"]
         projected_gravity = quat_rotate(
             observation["a1_description/sensors_framequat"],
             self.gravity_vector,
             inverse=True,
         )
-        move_speed = 0.5
-        commands = np.asarray([move_speed * 1.5, 0, 0])
+        commands = np.array([0.5, 0.0, 0.0])
         dof_pos = observation["a1_description/joints_pos"]
         dof_vel = observation["a1_description/joints_vel"]
         actions = observation["a1_description/prev_action"]
-        return {
-            "base_lin_vel": base_lin_vel * self.obs_scales.lin_vel,
-            "base_ang_vel": base_ang_vel * self.obs_scales.ang_vel,
-            "projected_gravity": projected_gravity,
-            "commands": commands * self.command_scale,
-            "dof_pos": (dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-            "dof_vel": dof_vel * self.obs_scales.dof_vel,
-            "actions": actions,
-        }
-        # return np.concatenate(
-        #     [
-        #         base_lin_vel,
-        #         base_ang_vel,
-        #         projected_gravity,
-        #         commands,
-        #         dof_pos,
-        #         dof_vel,
-        #         actions,
-        #     ]
-        # )
+        return np.concatenate(
+            [
+                base_lin_vel * obs_scales.lin_vel,
+                base_ang_vel * obs_scales.ang_vel,
+                projected_gravity,
+                commands * command_scale,
+                (dof_pos[joint_alter_index] - default_dof_pos) * obs_scales.dof_pos,
+                dof_vel[joint_alter_index] * obs_scales.dof_vel,
+                (actions - default_dof_pos)[joint_alter_index]
+                / obs_scales.action_scale,
+            ]
+        )
+
+
+class ActionMujoco2Isaac(gym.ActionWrapper):
+    def action(self, action):
+        action = action[joint_alter_index] * obs_scales.action_scale + default_dof_pos
+        return action
 
 
 class ClipAction(gym.ActionWrapper):
@@ -223,12 +179,15 @@ def make_mujoco_env(
     clip_actions: bool = True,
     action_filter_high_cut: Optional[float] = -1,
     action_history: int = 1,
+    timelimit: int = 1000,
+    randomize_ground=False,
 ) -> gym.Env:
     env = make_env(
-        env_name, control_frequency=control_frequency, action_history=action_history
+        env_name, control_frequency=control_frequency, action_history=action_history,
+        randomize_ground=randomize_ground,
     )
 
-    env = gym.wrappers.TimeLimit(env, 400)
+    env = gym.wrappers.TimeLimit(env, timelimit)
 
     env = gym.wrappers.ClipAction(env)
 
@@ -247,4 +206,5 @@ def make_mujoco_env(
                 np.concatenate([INIT_QPOS + ACTION_OFFSET, [1.0]]),
             )
 
+    env = ActionMujoco2Isaac(env)
     return env

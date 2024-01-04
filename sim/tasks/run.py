@@ -9,8 +9,8 @@ from dm_control.utils import rewards
 from sim.arenas import HField
 from sim.tasks.utils import _find_non_contacting_height
 
-DEFAULT_CONTROL_TIMESTEP = 0.03
-DEFAULT_PHYSICS_TIMESTEP = 0.001
+DEFAULT_CONTROL_TIMESTEP = 0.02
+DEFAULT_PHYSICS_TIMESTEP = 0.005
 
 
 def get_run_reward(x_velocity: float, move_speed: float, cos_pitch: float,

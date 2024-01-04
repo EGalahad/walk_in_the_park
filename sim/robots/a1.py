@@ -62,7 +62,8 @@ class A1(base.Walker):
             self._mjcf_root.model = name
         # Find MJCF elements that will be exposed as attributes.
         self._root_body = self._mjcf_root.find('body', 'trunk')
-        self._root_body.pos[-1] = 0.125
+        # self._root_body.pos[-1] = 0.125
+        self._root_body.pos[-1] = 0.42
 
         self._joints = self._mjcf_root.find_all('joint')
 
@@ -73,11 +74,13 @@ class A1(base.Walker):
         for joint, actuator in zip(self._joints, self._actuators):
             assert joint == actuator.joint
 
-        self.kp = 60
+        # self.kp = 60
+        self.kp = 20
         if learn_kd:
             self.kd = None
         else:
-            self.kd = 10
+            # self.kd = 10
+            self.kd = 0.5
 
         self._prev_actions = deque(maxlen=action_history)
         self.initialize_episode_mjcf(None)
